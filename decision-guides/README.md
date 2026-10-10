@@ -1,6 +1,8 @@
 # AWS Service Decision Guide
 
-Start with the requirement, not the product name. These matrices are recall aids; validate implementation details in current AWS documentation.
+Start with the requirement, not the product name. These matrices are recall aids; validate implementation details in current AWS documentation. For sources and qualifications, use [RDS](../topic-guides/09-RDS-Aurora.md), [messaging](../topic-guides/17-SQS-SNS-Kinesis.md), and [KMS](../topic-guides/20-KMS-CloudHSM.md).
+
+SQS consumers must handle redelivery; FIFO orders within a message group and deduplicates sends within its window. SNS has delivery retries and optional FIFO archive/replay. Do not infer exactly-once business effects from a messaging feature name.
 
 ## Messaging and events
 
@@ -18,7 +20,7 @@ Ask next: must ordering be strict, must events be replayed, is one or many consu
 
 | Requirement | Strong first candidate | Watch for |
 |---|---|---|
-| Survive an AZ failure | Multi-AZ deployment | Availability, not read scaling |
+| Survive an AZ failure | Multi-AZ deployment | DB instance standby is unreadable; DB cluster instances can serve reads |
 | Scale read traffic | Read replica | Replication lag and promotion behavior |
 | Cross-Region reads or DR | Cross-Region replica / Aurora Global Database | Recovery objectives and write topology |
 | Recover from accidental writes | Point-in-time recovery / backup | Failover does not undo logical corruption |

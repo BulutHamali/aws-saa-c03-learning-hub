@@ -36,7 +36,10 @@ Keep each pull request focused. Run the repository checks before submitting:
 
 ```bash
 python3 scripts/check_repository.py
+python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
 By contributing, you agree that your contribution is available under this repository's CC BY 4.0 license.
+
+The checks validate inline Markdown links/images, heading anchors, study-plan coverage, and attribution. They do not fetch external URLs, validate all Markdown syntax, or establish factual accuracy. For technical changes, follow the source and scope standard in [the audit record](AUDIT.md).
 

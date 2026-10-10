@@ -16,6 +16,8 @@ This repository combines 37 concise topic guides with a repeatable learning syst
 | A few days | [Decision guide](decision-guides/README.md) | Practice the service choices you are most likely to confuse |
 | An exam booked | [Progress tracker](CHECKLIST.md) | Turn every missed question into a named weak area |
 
+New to AWS? Start with the [prerequisites and glossary](START-HERE.md). Check the [exam-domain map](EXAM-MAP.md) and take the [diagnostic](practice/diagnostic.md) to choose weak areas.
+
 Then test your reasoning with the [architecture challenges](practice/architecture-challenges.md). The answers explain why the tempting alternatives fail—not just which option wins.
 
 ## How to learn with this repository
@@ -34,7 +36,9 @@ Then test your reasoning with the [architecture challenges](practice/architectur
 - [Decision matrices](decision-guides/README.md) for commonly confused AWS services
 - [Architecture challenges](practice/architecture-challenges.md) with expandable explanations
 - [A printable progress tracker](CHECKLIST.md) for topics, practice, and weak-area review
-- Automated checks for broken internal links and missing attribution
+- [Architecture workshops](labs/README.md) with expected results; no AWS account required
+- [An audit record](AUDIT.md) distinguishing verified corrections from material awaiting review
+- Automated checks for internal link targets, heading anchors, study-plan coverage, and attribution
 
 ## A healthy way to use exam material
 
@@ -46,6 +50,6 @@ AWS services evolve. If you find an outdated limit, ambiguous explanation, or mi
 
 ## Attribution and license
 
-The 37 files under `topic-guides/` were originally created by [RonitSachdev](https://github.com/RonitSachdev) in [RonitSachdev/aws-saa-c03-guides](https://github.com/RonitSachdev/aws-saa-c03-guides). This repository adapts that CC BY 4.0 work and adds new learning paths, decision aids, practice scenarios, community standards, and quality automation. Changes are not endorsed by the original author.
+The 37 numbered topic guides under `topic-guides/` were originally created by [RonitSachdev](https://github.com/RonitSachdev) in [RonitSachdev/aws-saa-c03-guides](https://github.com/RonitSachdev/aws-saa-c03-guides). This repository adapts that CC BY 4.0 work, corrects selected factual claims, and adds learning paths, decision aids, practice scenarios, workshops, community standards, and quality automation. Changes are not endorsed by the original author.
 
 The repository is licensed under [CC BY 4.0](LICENSE). When reusing it, preserve attribution to the original author and indicate your changes.

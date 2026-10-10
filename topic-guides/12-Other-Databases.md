@@ -1,8 +1,10 @@
-# Section 12: The Other Databases (keyword zoo)
+# Section 12: Specialized Databases and Analytics
 
 ## The idea
 
-Think of a hardware store wall: fifty screwdrivers, and each one exists for exactly one screw head. You don't need to *master* any of them — you need to glance at the screw and grab the right handle. AWS's specialty databases are that wall. **Each engine has ONE identifying keyword**, and the exam question always hands you the screw. This section is pure pattern-matching: keyword in, service out.
+Start with the data model, access pattern, consistency requirements, compatibility, and operational burden. A keyword suggests a candidate; it does not prove the candidate satisfies the whole workload.
+
+> **Lifecycle note, checked 2026-10-10:** QLDB support ended July 31, 2025. Its mentions below are historical context. See the [AWS QLDB notice](https://docs.aws.amazon.com/qldb/latest/developerguide/getting-started-step-7.html).
 
 But first, one concept from zero, because it anchors half the zoo:
 
@@ -11,19 +13,19 @@ But first, one concept from zero, because it anchors half the zoo:
 - **OLTP** — OnLine **Transaction** Processing: **many small operations**. *"Fetch order #123." "Update this user's address."* Millions per day, each touching a few rows. This is your day-to-day app database: RDS, Aurora, DynamoDB. Row-based storage (grab the whole record at once).
 - **OLAP** — OnLine **Analytical** Processing: **few huge scans**. *"Average revenue per region per month across five years."* One query reads billions of rows but only 3 columns. Purpose-built warehouses use **columnar storage** — data stored column-by-column, so scanning `revenue` doesn't drag every other field off disk. Massively faster for analytics, plus columns compress beautifully.
 
-**THE trap (the cardinal sin):** *"analysts run big reporting queries against the production database and the app slows down."* Never run analytics on your prod OLTP database. The answer is always: move analytics to **Redshift** (or a Read Replica / Athena, per the scenario).
+**THE trap (the cardinal sin):** *"analysts run big reporting queries against the production database and the app slows down."* Evaluate isolating analytical load with a read replica, warehouse, or S3-based query approach. Query shape, freshness, and cost determine which fits.
 
-### The zoo — one call each
+### Service candidates
 
-| Service | The ONE identifying call |
+| Service | Selection considerations |
 |---|---|
 | **Redshift** | **Data warehouse.** Keywords: *OLAP, BI, analytics, petabyte-scale, columnar.* Load data in, point Tableau/QuickSight at it. **Redshift Spectrum** = query data **still sitting in S3** from Redshift **without loading it**. **Redshift Serverless** = same warehouse, no cluster to manage, pay per use. |
 | **Athena** | **SQL directly on files in S3.** Fully **serverless**, pay **$5 per TB scanned**. Keyword: *"analyze logs in S3 with SQL, no infrastructure."* |
 | **Neptune** | **Graph database.** Data that is mostly *relationships*: **social networks, recommendation engines, fraud rings, knowledge graphs.** "Friends-of-friends" → Neptune. |
-| **QLDB** | **Ledger.** **Immutable, cryptographically verifiable** history — nothing can be changed or deleted, ever, and you can *prove* it. **Centralized** (one owner). |
+| **QLDB** | Historical centralized ledger service; support ended. Do not choose for a new deployment. |
 | **Managed Blockchain** | Like QLDB but **decentralized** — **multiple parties** who don't trust each other transact **without a central authority**. QLDB vs Blockchain = one owner vs many parties. |
 | **Timestream** | **Time-series** database. **IoT sensor data, telemetry, DevOps metrics** — timestamped measurements arriving forever, queried by time window. |
-| **DocumentDB** | The keyword is literally **"MongoDB."** MongoDB-compatible managed document DB. See MongoDB → circle DocumentDB → move on. |
+| **DocumentDB** | The keyword is literally **"MongoDB."** MongoDB-compatible managed document DB. Validate supported APIs, versions, query behavior, and migration requirements; compatibility is not equivalence. |
 | **Keyspaces** | The keyword is literally **"Cassandra."** Apache Cassandra-compatible, serverless. |
 | **OpenSearch** | **Full-text / fuzzy search** + **log analytics with dashboards** (the old Elasticsearch/Kibana). Search "runing shoes" and still find running shoes. |
 
@@ -55,11 +57,11 @@ All three shrink bytes scanned = smaller bill. Memorize the trio.
 > *"Run occasional SQL queries on ALB/VPC logs stored in S3, minimal setup"* → **Athena** (serverless SQL-on-S3)
 > *"Reduce Athena costs and speed up queries"* → **Parquet/ORC + compression + partitioning** (bill = TB scanned, so scan less)
 > *"Social app needs friend-of-friend recommendations / detect fraud rings"* → **Neptune** (relationships = graph)
-> *"Complete, immutable, cryptographically verifiable history of financial records, single organization"* → **QLDB** (centralized ledger)
+> *"Complete, immutable, cryptographically verifiable history of financial records, single organization"* → **historical QLDB use case**; identify supported alternatives for new systems
 > *"Multiple companies transact without a trusted central authority"* → **Managed Blockchain** (decentralized — the QLDB foil)
 > *"Millions of IoT sensor readings per minute, analyzed over time windows"* → **Timestream** (time-series)
-> *"Migrate a MongoDB workload to a managed AWS service"* → **DocumentDB** (keyword match, done)
-> *"Migrate a Cassandra workload"* → **Keyspaces** (keyword match, done)
+> *"Migrate a MongoDB workload to a managed AWS service"* → **DocumentDB as a candidate**, after testing compatibility
+> *"Migrate a Cassandra workload"* → **Keyspaces as a candidate**, after checking supported features
 > *"Product catalog needs fuzzy, typo-tolerant full-text search; data is in DynamoDB"* → **OpenSearch** (via DynamoDB Streams → Lambda; DynamoDB can't fuzzy-search)
 > *"Analysts' reports are slowing the production OLTP database"* → **move analytics off prod** — to Redshift (the cardinal sin, corrected)
 
@@ -72,7 +74,7 @@ All three shrink bytes scanned = smaller bill. Memorize the trio.
 | SQL on S3, serverless, ad-hoc / logs | Athena |
 | Cut Athena cost | Parquet/ORC + compress + partition |
 | Graph / social / fraud ring / recommendations | Neptune |
-| Immutable verifiable ledger, centralized | QLDB |
+| Historical centralized ledger | QLDB (support ended) |
 | Decentralized, multi-party, no central authority | Managed Blockchain |
 | Time-series / IoT / telemetry / metrics | Timestream |
 | "MongoDB" | DocumentDB |
@@ -80,4 +82,4 @@ All three shrink bytes scanned = smaller bill. Memorize the trio.
 | Full-text / fuzzy search, log dashboards | OpenSearch |
 | Analytics choking prod OLTP DB | Move it — Redshift |
 
-That's every database in the toolbox sorted by screw head — now Section 13 turns to the thing that glues all these services together with code: Lambda.
+Before selecting a specialized database, explain its access pattern and one limitation that could rule it out.

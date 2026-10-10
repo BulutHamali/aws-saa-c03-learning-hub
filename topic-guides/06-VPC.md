@@ -44,11 +44,11 @@ That's NAT: **private instances can initiate outbound to the internet; the inter
 
 Lock in these facts:
 
-- The NAT Gateway **lives IN a public subnet** — it needs the IGW route itself to reach the internet. Private subnets then route `0.0.0.0/0 → nat-xxx`.
-- A NAT Gateway is **per-AZ**. THE trap: one NAT Gateway shared by all AZs = a hidden single point of failure — if its AZ dies, every private subnet loses internet. *"Make NAT highly available"* → **one NAT Gateway per AZ**, each private subnet routing to its local one.
+- A **zonal public NAT gateway** lives in a public subnet with an IGW route. Private NAT gateways serve a different connectivity purpose. **Regional public NAT gateways** do not require a public subnet to host them.
+- For **zonal NAT**, use one per AZ and local routes to avoid an AZ dependency. **Regional NAT** can expand across AZs automatically; inspect availability mode before applying the one-per-AZ rule. [Regional NAT documentation](https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateways-regional.html).
 - NAT Gateway is **managed, scales automatically (up to ~45–100 Gbps), no security groups on it**, pay per hour + per GB.
 - **NAT Instance** = the legacy DIY version: an EC2 instance doing NAT. It CAN have a security group, you manage/patch/size it yourself, and — THE NAT-instance answer — you must **disable the source/destination check** on it (EC2 normally drops traffic not addressed to itself; a NAT forwards other people's traffic, so the check must go).
-- IPv6 has no NAT (every IPv6 address is public). The IPv6 equivalent of "outbound-only" is the **egress-only Internet Gateway**. *"IPv6 instances need outbound internet but no inbound"* → egress-only IGW.
+- For outbound-only native IPv6 internet access, use an **egress-only Internet Gateway**. IPv6 addressing does not itself authorize connectivity; routes and security rules still apply. DNS64/NAT64 is a separate option for IPv6 workloads reaching IPv4 destinations. *"IPv6 instances need outbound internet but no inbound"* → egress-only IGW.
 
 ## CIDR essentials
 
@@ -71,7 +71,7 @@ Two firewalls, different posts, different memories:
 | Can reference | **Other SGs** | Only CIDR blocks |
 
 - **Stateful** = a receptionist **with memory**: if she let your request out, she automatically lets the reply back in. With SGs you never write a rule for return traffic.
-- **Stateless** = a gate guard with **no memory**: he checked the outgoing request, but the reply is a brand-new stranger to him — it needs its **own explicit rule**. Replies come back on **ephemeral ports (1024–65535)**, so NACLs need an outbound (and inbound, for the reverse direction) allow for that range. THE trap: *"requests go out but responses never return"* → **NACL is missing the ephemeral-port outbound rule**.
+- **Stateless** NACLs need rules for both request and response directions. For a subnet client initiating HTTPS, allow outbound destination TCP 443 and inbound destination client ephemeral ports. For a subnet server accepting HTTPS, allow inbound destination TCP 443 and outbound destination client ephemeral ports. The ephemeral range depends on the client OS and AWS component; inspect the actual flow. [NACL examples](https://docs.aws.amazon.com/vpc/latest/userguide/custom-network-acl.html).
 - **SG referencing**: instead of IPs, an SG rule can say "allow port 3306 **from the app-tier's security group**." *"Only app servers may reach the database"* → **DB SG allows inbound from the app SG** — elegant, survives IP changes.
 - SGs **cannot deny**. THE trap: *"block traffic from a specific malicious IP"* → **NACL DENY rule** (a SG physically has no deny button).
 
@@ -139,7 +139,7 @@ Quick chooser: **2–3 VPCs, full network access → Peering. Many VPCs + VPN/DX
 
 > *"Expose one application to a partner VPC; CIDR ranges overlap"* → **PrivateLink** (NLB + endpoint service; overlap doesn't matter)
 
-> *"Single NAT Gateway — make the design highly available"* → **One NAT Gateway per AZ**, each private subnet routing to its local one
+> *"Single zonal NAT Gateway — remove the AZ dependency"* → evaluate **one zonal NAT per AZ with local routes**, or a suitable **regional NAT** design.
 
 > *"Private instances need to download OS updates"* → **NAT Gateway in the public subnet** + private route `0.0.0.0/0 → NAT`
 
@@ -151,7 +151,7 @@ Quick chooser: **2–3 VPCs, full network access → Peering. Many VPCs + VPN/DX
 
 > *"NAT instance stopped forwarding traffic"* → **Disable the source/destination check**
 
-> *"Outbound requests succeed but responses never arrive"* → **NACL missing outbound ephemeral-port (1024–65535) rule** (stateless!)
+> *"Outbound requests succeed but responses never arrive"* → **inspect the return direction**: replies to an outbound client need inbound ephemeral-port permission on the client's subnet NACL
 
 ## Pocket card
 
@@ -159,7 +159,7 @@ Quick chooser: **2–3 VPCs, full network access → Peering. Many VPCs + VPN/DX
 |---|---|
 | Public subnet definition | Route to IGW |
 | Outbound-only internet for private subnet | NAT Gateway (in a public subnet) |
-| NAT high availability | One NAT Gateway per AZ |
+| NAT high availability | Check availability mode: per-AZ zonal routes or suitable regional NAT |
 | NAT instance fix | Disable source/dest check |
 | IPv6 outbound-only | Egress-only IGW |
 | Reserved IPs per subnet | 5 |
@@ -179,3 +179,5 @@ Quick chooser: **2–3 VPCs, full network access → Peering. Many VPCs + VPN/DX
 | One network, many accounts | VPC Sharing via RAM |
 
 You now own the network — next up are the roads leading into it from the outside world: Route 53, Direct Connect, and Site-to-Site VPN, plus the load balancers from Section 5 that stand at its public doors.
+
+Targeted NAT-mode and NACL-direction review: 2026-10-10. Other networking claims retain their inherited review status; see [audit record](../AUDIT.md).

@@ -8,16 +8,16 @@ The SAA-C03 isn't trying to see if you've *heard* of services — it's checking 
 
 | THE trap | The truth |
 |---|---|
-| "Read from the RDS Multi-AZ standby to offload queries" | **NO** — the standby is invisible; use **read replicas** for reads |
+| "Every RDS Multi-AZ standby is unreadable" | Only the DB instance standby is unreadable; Multi-AZ DB clusters have readable instances |
 | "CNAME record at the zone apex (example.com)" | CNAMEs can't sit at the apex — use an **Alias record** |
 | "Add a deny rule to the security group" | Security groups have **no deny rules** (allow-only, stateful) — deny lives in **NACLs** |
 | "Private subnet reaches S3 via NAT Gateway" | Works but costs money — **Gateway VPC Endpoint** is free and private |
-| "Run the 20-minute job in Lambda" | Lambda caps at **15 minutes** — use Fargate/Batch/Step Functions |
+| "Run a 20-minute task on standard Lambda" | Exceeds its 15-minute limit; evaluate compute or supported Managed Instances invocation types |
 | "Mount EFS on Windows instances" | EFS is Linux-only — Windows shared storage = **FSx for Windows File Server** |
 | "Snowball imports directly into Glacier" | No — Snowball lands in **S3**, then a **lifecycle policy** moves it to Glacier |
 | "A↔B and B↔C peering lets A reach C" | Peering is **non-transitive** — need **Transit Gateway** (or direct A↔C peering) |
 | "Encrypt the existing unencrypted RDS/EBS in place" | Impossible in place — **snapshot → copy snapshot with encryption → restore** |
-| "KMS for FIPS 140-2 Level 3 / single-tenant keys" | That's **CloudHSM** (KMS is Level 2*, multi-tenant) |
+| "FIPS Level 3 alone implies CloudHSM" | KMS uses FIPS 140-3 Level 3 HSMs; dedicated tenancy and control requirements distinguish CloudHSM |
 | "Shield Standard stops layer-7 application attacks" | Standard is L3/L4 only — L7 protection = **WAF / Shield Advanced** |
 | "Apply an SCP to restrict the management account" | SCPs **never affect the management account** |
 | "Replay DynamoDB Streams data from last month" | Streams keep **24 hours** — longer retention → **Kinesis Data Streams** |
@@ -25,8 +25,8 @@ The SAA-C03 isn't trying to see if you've *heard* of services — it's checking 
 | "Add an LSI to the existing DynamoDB table" | **LSIs only at table creation** — after creation, add a **GSI** |
 | "Accelerate UDP traffic with CloudFront" | CloudFront is HTTP(S) only — UDP/TCP acceleration = **Global Accelerator** |
 | "Parameter Store rotates the DB password automatically" | No native rotation — automatic rotation = **Secrets Manager** |
-| "One NAT Gateway serves all AZs, highly available" | AZ failure kills it — deploy **one NAT Gateway per AZ** |
-| "SNS alone guarantees consumers never miss messages" | SNS doesn't persist for offline consumers — durable fan-out = **SNS → SQS** |
+| "All NAT gateways are zonal" | Zonal NAT needs per-AZ design; regional NAT can expand across AZs automatically |
+| "SNS has no retries or persistence features" | Delivery retries exist; FIFO topics can archive/replay. SNS → SQS provides independent consumer backlogs |
 | "Direct Connect is encrypted because it's private" | **Not encrypted** — run a **VPN over DX** for encryption |
 
 ## Must-know combos (the exam's favorite Lego sets)
@@ -76,16 +76,18 @@ The SAA-C03 isn't trying to see if you've *heard* of services — it's checking 
 | Apex domain | Alias record |
 | Deny traffic | NACL (never SG) |
 | Free S3 access from VPC | Gateway Endpoint |
-| >15 minutes | Not Lambda (Fargate/Batch) |
+| >15 minutes | Exceeds standard Lambda; inspect execution model and orchestration needs |
 | Windows file share | FSx for Windows |
 | Transitive routing | Transit Gateway |
 | Encrypt existing volume/DB | Snapshot dance |
-| FIPS Level 3 | CloudHSM |
+| Dedicated HSM tenancy/control | Evaluate CloudHSM; Level 3 alone does not exclude KMS |
 | Static IP load balancer | NLB |
 | UDP acceleration | Global Accelerator |
 | Auto-rotation | Secrets Manager |
-| HA NAT | One per AZ |
+| HA NAT | Check regional versus zonal availability mode |
 | Durable fan-out | SNS → SQS |
 | Encrypted DX | VPN over DX |
 
 Traps mapped, combos memorized — one last sweep remains: the small-but-tested gap-fill services that each show up for one or two easy points.
+
+For verified qualifications and sources, review [RDS](09-RDS-Aurora.md), [Lambda](13-Lambda.md), [messaging](17-SQS-SNS-Kinesis.md), [KMS](20-KMS-CloudHSM.md), and [Snow lifecycle](27-Snow-Family.md). Targeted corrections: 2026-10-10. Other inherited shortcuts still require context.

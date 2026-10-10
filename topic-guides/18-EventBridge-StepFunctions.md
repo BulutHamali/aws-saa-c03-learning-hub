@@ -34,7 +34,7 @@ Extra features the exam pokes at:
 - **Schema registry**: EventBridge discovers event structures and generates code bindings, so developers know what fields to expect.
 - **Cross-account event buses**: send events from account A's bus to account B's bus — the standard pattern for centralizing events in a multi-account org.
 
-**THE trap: EventBridge vs SNS.** Both "send events to targets", so exams bait you. **EventBridge** = **rich content filtering, AWS-service and SaaS event routing, scheduling, archive/replay**. **SNS** = **massive fan-out push** (millions of subscribers, mobile push, SMS, email). "Route events from a SaaS provider" or "filter on event content" → EventBridge. "Fan one message out to huge numbers of subscribers" → SNS.
+**THE trap: EventBridge vs SNS.** Both "send events to targets", so exams bait you. **EventBridge** = **rich content filtering, AWS-service and SaaS event routing, scheduling, archive/replay**. **SNS** = **massive fan-out push** (millions of subscribers, mobile push, SMS, email). "Route events from a SaaS provider" or "filter on event content" requires checking integrations too: SNS supports attributes or JSON body filtering. "Fan one message out to huge numbers of subscribers" → SNS.
 
 ## Step Functions: the workflow orchestrator
 
@@ -47,11 +47,11 @@ A **state machine** is your flowchart; each box is a **state**:
 | **Wait** | Pause for time or until a timestamp | "wait 3 days then..." |
 | **Parallel** | Run branches at the same time | "simultaneously" |
 | **Map** | For-each over an array of items | "process each item in a list" |
-| **Retry/Catch** | **Exponential backoff retries built in** | "retry with backoff **without custom code**" |
+| **Retry/Catch fields** | **Error handling on supported states, not standalone state types** | "retry with backoff **without custom code**" |
 
 That last row is gold: *"retry failed steps with exponential backoff without writing custom retry code"* → **Step Functions**, full stop.
 
-**THE trap: Lambda-chaining.** The scenario: a multi-step process where Lambda A calls Lambda B calls Lambda C, and it's fragile, or the whole thing needs **more than 15 minutes** (the Lambda hard timeout), or the business needs **error handling and an audit of every step**. The answer is **never** "Lambdas calling Lambdas" — it's **Step Functions orchestrating the Lambdas**. You get visual workflow, per-step retry, and full execution history for free.
+**Workflow coordination:** use Step Functions for explicit state, branching, retries, waits, and execution history. Standard Lambda's timeout applies per invocation. Step Functions can also coordinate ECS/Batch jobs. Workflows and integrated services are billed; execution history is not free unlimited retention.
 
 **Standard vs Express workflows** — memorize this table:
 
@@ -105,3 +105,5 @@ That last row is gold: *"retry failed steps with exponential backoff without wri
 | Backoff retries, no code | Built-in Retry |
 
 EventBridge decides *which* work should happen when an event arrives; Step Functions makes sure multi-step work *finishes correctly* — and next we meet the services that watch everything else: CloudWatch, CloudTrail, and Config.
+
+Filtering clarification checked 2026-10-10: [SNS filter scope](https://docs.aws.amazon.com/sns/latest/dg/sns-message-filtering-scope.html).

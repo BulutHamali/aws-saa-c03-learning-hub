@@ -18,7 +18,9 @@ Think of DR strategies as **kinds of spare tires**. Backup & Restore is *no spar
 
 ## The four strategies
 
-| Strategy | RTO | RPO | Cost | What runs in the DR region |
+The ranges below are illustrative planning heuristics, not service guarantees. Backup frequency, replication, detection, quotas, DNS caching, and application recovery can dominate the result.
+
+| Strategy | Illustrative RTO | Illustrative RPO | Relative cost | What runs in the DR region |
 |---|---|---|---|---|
 | **Backup & Restore** | Hours | Hours | $ cheapest | Nothing — backups in S3, rebuild on disaster |
 | **Pilot Light** | Tens of minutes | Minutes–seconds | $$ | Core only: **DB continuously replicated, servers off/minimal** |
@@ -38,7 +40,7 @@ Signal phrases:
 
 | Service | Role in DR |
 |---|---|
-| **Aurora Global Database** | Cross-region replication, **RPO ~1 second, RTO < 1 minute** |
+| **Aurora Global Database** | Cross-Region replication; test data loss and full application recovery rather than assuming a fixed RPO/RTO |
 | **DynamoDB Global Tables** | Multi-region, multi-active NoSQL — writes anywhere |
 | **S3 Cross-Region Replication (CRR)** | Objects copied to a bucket in another region |
 | **AWS Backup** | **Centralized, cross-service backup plans** (EBS, RDS, DynamoDB, EFS…) + **Vault Lock** for immutable backups |
@@ -58,7 +60,7 @@ Signal phrases:
 
 > *"DR needed at the LOWEST cost; hours of downtime acceptable"* → **Backup & Restore** (cheapest strategy that meets a relaxed RTO)
 
-> *"Application must survive a region failure with zero downtime and zero data loss"* → **Multi-Site Active-Active** (only ~zero RPO/RTO option)
+> *"Application targets minimal interruption during a Region failure"* → evaluate **multi-site active-active**, including replication consistency, routing, failure detection, and conflict handling. The topology alone does not guarantee zero loss or interruption.
 
 > *"Database continuously replicated to DR region; EC2 launched only during a disaster"* → **Pilot Light** (core data live, compute off)
 
@@ -66,7 +68,7 @@ Signal phrases:
 
 > *"Cost-effective DR for 200 on-premises servers into AWS"* → **Elastic Disaster Recovery (DRS)** (continuous block replication, pay tiny until failover)
 
-> *"Global relational database with cross-region RPO of ~1 second"* → **Aurora Global Database** (RPO 1s, RTO under a minute)
+> *"Global relational database with cross-region RPO of ~1 second"* → **Aurora Global Database as a candidate**; validate engine, replication, and application recovery behavior
 
 > *"Automatically route users to the standby region when the primary fails"* → **Route 53 failover routing with health checks**
 
@@ -79,11 +81,13 @@ Signal phrases:
 | Cheapest, RTO hours | Backup & Restore |
 | DB replicated, servers off | Pilot Light |
 | Scaled-down copy running | Warm Standby |
-| Zero RPO/RTO, both live | Multi-Site Active-Active |
-| RPO 1s / RTO <1 min relational | Aurora Global Database |
+| Both Regions serve traffic | Multi-Site Active-Active; validate consistency and recovery |
+| Cross-Region relational recovery | Evaluate Aurora Global Database against tested objectives |
 | Multi-region multi-active NoSQL | DynamoDB Global Tables |
 | Centralized cross-service backups | AWS Backup (+ Vault Lock) |
 | Replicate on-prem servers for DR | Elastic Disaster Recovery (DRS) |
 | DNS failover to DR region | Route 53 failover routing |
 
 You now hold the full toolbox — time to sharpen it against the exam's favorite tricks: the classic traps and must-know combos.
+
+Targeted guarantee review: 2026-10-10. [Aurora managed recovery documentation](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-global-database-disaster-recovery.html) describes recovery in minutes; distinguish database promotion from application recovery.

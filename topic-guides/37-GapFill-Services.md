@@ -2,7 +2,7 @@
 
 ## The idea
 
-You've built the skyscrapers — EC2, S3, VPC, RDS. This section is the **spice rack**: dozens of small jars you'll each use once, but when the recipe calls for saffron, only saffron will do. Each of these services shows up on the exam **once or twice**, almost always as a pure **keyword-match** question. You don't need depth; you need to hear the signal word and slap the right label on it. That makes this the highest points-per-minute section you'll study — easy marks hiding in plain sight.
+These additional services solve specific architecture problems. Use the short descriptions to identify candidates, then verify capabilities, integrations, and constraints. There is no published guarantee about how often an individual service appears on an exam.
 
 Read each entry as: *signal keyword → service*. That's genuinely how the questions work.
 
@@ -30,7 +30,7 @@ Read each entry as: *signal keyword → service*. That's genuinely how the quest
 
 ## Certificates & network odds-and-ends
 
-**ACM (AWS Certificate Manager)** — **free public TLS/SSL certificates** with **automatic renewal**, attachable to ALB, CloudFront, API Gateway. Two exam facts: a certificate for **CloudFront MUST live in us-east-1** (any region works for a regional ALB), and **you cannot export ACM public certs to install on an EC2 instance** — ACM only attaches to integrated services.
+**ACM (AWS Certificate Manager)** manages TLS certificates. CloudFront viewer certificates in ACM use **us-east-1**; an ALB certificate belongs in the ALB's Region. ACM now offers **exportable public certificates** for EC2 and other hosts, with additional charges and customer-managed deployment of renewed certificates. Non-exportable certificates have different deployment restrictions. Public certificates created before June 17, 2025 cannot be exported. Sources, checked 2026-10-10: [exportable certificates](https://docs.aws.amazon.com/acm/latest/userguide/acm-exportable-certificates.html), [export eligibility](https://docs.aws.amazon.com/acm/latest/userguide/export-public-certificate.html).
 
 **Egress-only Internet Gateway** — the **IPv6 "NAT gateway."** IPv6 addresses are all public, so NAT doesn't apply; this gateway lets IPv6 instances make **outbound-only** connections while blocking inbound. Signal: *"IPv6 instances need outbound internet, no inbound."*
 
@@ -137,7 +137,7 @@ One service, several exam-favorite features:
 | Lift-and-shift servers (rehost) | MGN |
 | DR replication, RPO seconds | Elastic Disaster Recovery (DRS) |
 | DB migration, different engines | DMS + SCT |
-| Free auto-renewing TLS certs | ACM |
+| Managed TLS certificates | ACM; check exportability, charges, and renewal deployment |
 | CloudFront certificate region | us-east-1 (always) |
 | IPv6 outbound-only | Egress-only Internet Gateway |
 | On-prem → VPC DNS | Resolver inbound endpoint |

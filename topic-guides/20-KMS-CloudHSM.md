@@ -1,90 +1,72 @@
 # Section 20: KMS & CloudHSM
 
+[Topic index](00-README.md)
+
 ## The idea
 
-Encryption is easy to say and hard to do well — the hard part is never the math, it's **key management**: where do keys live, who can use them, how do you rotate them, and how do you prove who touched them?
+Encryption protects data only if key access and recovery are designed correctly. Separate three questions: who controls key policy, who operates the cryptographic infrastructure, and which compliance requirements apply?
 
-Picture a **bank vault with a signing register**. **KMS** (**Key Management Service**) is the bank's shared vault: your keys live in safe-deposit boxes, the bank's staff (AWS) run the vault, almost every AWS service knows how to walk up to it, and **every single time a key is used, it's written in the register** — that register is **CloudTrail**, and that audit trail is **KMS's superpower**. **CloudHSM** is different: it's you renting an **entire private vault room** — dedicated hardware, your rules, and even the bank staff **cannot see inside**.
+## Choose by ownership and operating model
 
-Spell out the jargon: **KMS** stores and manages **encryption keys** centrally; it integrates with essentially every AWS service (S3, EBS, RDS, Lambda env vars...). **HSM** = **Hardware Security Module**, a tamper-resistant physical device that performs crypto operations.
+| Option | Control and operating model | Good fit |
+|---|---|---|
+| AWS-owned keys | Service-owned; not exposed as keys in your account | Managed encryption without customer key administration |
+| AWS-managed KMS keys | AWS manages their lifecycle; limited customer control | Supported service integration with AWS-managed policy |
+| Customer-managed KMS keys | You administer policy, grants, lifecycle, and eligible rotation settings | Fine-grained access, audit, and cross-account requirements |
+| CloudHSM | Dedicated HSM infrastructure with customer administration of cryptographic users and keys | Requirements for dedicated hardware or supported custom crypto interfaces |
 
-## KMS key types
+Do not choose CloudHSM solely because a question says “FIPS Level 3.” **KMS uses FIPS 140-3 Security Level 3 validated HSMs.** Validate the required certification and module rather than relying on the obsolete “KMS Level 2” comparison.
 
-| Type | Cost | Rotation | Control |
-|---|---|---|---|
-| **AWS-managed** (`aws/s3` etc.) | free | automatic | none — AWS runs it |
-| **Customer-managed key (CMK)** | **$1/month** | **optional auto-rotation (yearly)** | full: your key policy, disable/delete |
-| **AWS-owned** | invisible | — | none; shared across accounts, you never see it |
+Sources: [KMS data protection](https://docs.aws.amazon.com/kms/latest/developerguide/data-protection.html), [CloudHSM overview](https://docs.aws.amazon.com/cloudhsm/latest/userguide/introduction.html).
 
-Need control — your own key policy, cross-account grants, rotation you can point to in an audit → **customer-managed key**.
+## Permissions: key policy is central
 
-**Key policies + IAM: BOTH must allow.** Access to use a key = the **key policy** says yes **and** the caller's **IAM policy** says yes. A user with `kms:*` in IAM still gets denied if the key policy doesn't permit them.
+A KMS key policy can directly authorize principals or enable IAM policies to delegate access. Grants can also authorize specified operations. An identity's broad IAM permission does not bypass the key policy, and explicit denies still matter.
 
-## Envelope encryption — the ≤4KB rule
+Cross-account access requires the appropriate permission in the owning account's key policy and the caller's account IAM policy. “Both must always contain a direct Allow” is too broad for same-account access.
 
-**KMS will only directly encrypt data up to 4KB.** For anything bigger, use the **GenerateDataKey** pattern (**envelope encryption**):
+Source: [KMS key policies](https://docs.aws.amazon.com/kms/latest/developerguide/key-policies.html).
 
+## Envelope encryption
+
+The symmetric KMS Encrypt operation accepts up to 4,096 bytes. Encrypt larger payloads locally using a data key, and protect that data key with KMS:
+
+```text
+GenerateDataKey → plaintext key + encrypted key
+plaintext key → encrypt payload locally → discard plaintext key
+store encrypted payload + encrypted key
+decrypt encrypted key with KMS → decrypt payload locally
 ```
- You: "GenerateDataKey" ──▶ KMS
- KMS returns: ┌─ plaintext data key  (use it to encrypt your 100MB locally, then discard)
-              └─ encrypted data key  (store it next to the ciphertext)
- Decrypt later: send encrypted data key ─▶ KMS unwraps it ─▶ decrypt locally
-```
 
-The big data never travels to KMS; KMS only wraps/unwraps the small **data key**. "Encrypt a large file with KMS" → **envelope encryption / GenerateDataKey**, never "KMS encrypts it directly".
+Source: [KMS Encrypt API](https://docs.aws.amazon.com/kms/latest/APIReference/API_Encrypt.html).
 
-## Deletion, multi-Region, and Bucket Keys
+## Rotation, deletion, and cost
 
-**THE trap: there is NO immediate key deletion.** Scheduling deletion imposes a **mandatory 7–30 day waiting period** (default 30). Any answer that "deletes the KMS key immediately" is wrong — deleting a key makes everything it encrypted unrecoverable, so AWS forces you to wait. Need to stop use *right now*? **Disable** the key (instant, reversible).
+- Eligible customer-managed keys support automatic rotation with a configurable period; do not assume every key type supports it or that yearly rotation is the only choice.
+- Rotation changes key material while preserving the ability to decrypt older ciphertext. It does not re-encrypt stored data automatically.
+- Scheduling deletion has a 7–30 day wait. Disabling a key blocks new KMS use sooner, but does not erase plaintext or cached data keys already obtained.
+- KMS charges can include key storage and requests. “AWS-managed key = every operation free” is incorrect.
+- S3 Bucket Keys can reduce KMS request volume for SSE-KMS workloads. Check audit requirements and applicability.
 
-**Multi-Region keys**: the **same key material** replicated into other Regions with matching key IDs — **encrypt in one Region, decrypt in another**. The use cases: **DynamoDB global tables, cross-Region disaster recovery**, client-side encryption for globally moving data.
-
-**S3 Bucket Key recap**: instead of one KMS call per object, S3 uses a short-lived bucket-level key → **far fewer KMS API calls → cheaper** (KMS request costs drop ~99%), at the price of **coarser CloudTrail audit granularity** (you see bucket-key events, not one event per object).
-
-## CloudHSM — when the shared vault isn't enough
-
-**CloudHSM** = **dedicated, single-tenant** hardware security modules in your VPC.
-
-- **FIPS 140-2 LEVEL 3** validated — **KMS is Level 2**. The moment a question says "Level 3", the answer is CloudHSM. (FIPS 140-2 is the US government's crypto-module security standard; Level 3 adds physical tamper-resistance requirements.)
-- **YOU manage the keys; AWS has no access to them** — AWS manages the hardware only.
-- Use cases: strict **regulatory/compliance** mandates, **BYOK**-style full key custody, **SSL/TLS offload**, running your own certificate authority.
-
-**Decision rule:** "AWS must not be able to access the keys" / "FIPS 140-2 Level 3" / "dedicated hardware" → **CloudHSM**. Everything else — integration, audit, low cost, ease → **KMS**.
+Sources: [rotation](https://docs.aws.amazon.com/kms/latest/developerguide/rotating-keys-enable.html), [deletion](https://docs.aws.amazon.com/kms/latest/developerguide/deleting-keys.html), [pricing](https://aws.amazon.com/kms/pricing/), [S3 Bucket Keys](https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucket-key.html).
 
 ## Question patterns
 
-> *"Security team must audit every use of an encryption key."* → **KMS + CloudTrail** (every key use is logged — KMS's superpower).
+- **“Audit cryptographic API operations”** → KMS with CloudTrail; specify the operations and logging requirements.
+- **“Dedicated HSMs with customer crypto administration”** → evaluate CloudHSM.
+- **“Encrypt a large file”** → envelope encryption, not one direct KMS Encrypt call.
+- **“IAM says Allow but key use fails”** → inspect the key policy, grants, explicit denies, and cross-account requirements.
+- **“Rotate the key”** → distinguish key material rotation from data re-encryption.
 
-> *"Encrypt a 100MB file using KMS."* → **Envelope encryption via GenerateDataKey** (KMS only encrypts ≤4KB directly).
+## Check your understanding
 
-> *"A compromised key must be deleted immediately."* → **Impossible — 7–30 day mandatory waiting period; disable it now instead**.
+Does “FIPS Level 3 required” by itself eliminate KMS?
 
-> *"Compliance requires FIPS 140-2 Level 3 validated modules."* → **CloudHSM** (KMS is Level 2).
+<details>
+<summary>Expected explanation</summary>
 
-> *"Keys must be inaccessible even to AWS."* → **CloudHSM** (single-tenant, customer-controlled).
+No. KMS uses FIPS 140-3 Security Level 3 validated HSMs. Dedicated tenancy, key custody, interfaces, and the exact compliance requirement distinguish the choices.
 
-> *"Encrypt data in us-east-1, decrypt the same ciphertext in eu-west-1 (DR/global tables)."* → **KMS multi-Region keys**.
+</details>
 
-> *"Keys must rotate automatically every year under company control."* → **Customer-managed key with auto-rotation enabled**.
-
-> *"KMS request costs exploded from millions of S3 objects with SSE-KMS."* → **Enable S3 Bucket Key** (fewer KMS calls; accept coarser audit).
-
-> *"User has full IAM KMS permissions but still gets AccessDenied on a key."* → **Key policy doesn't allow them — BOTH key policy and IAM must permit**.
-
-## Pocket card
-
-| Keyword | Answer |
-|---|---|
-| Audit every key use | KMS + CloudTrail |
-| Free, AWS-rotated key | AWS-managed key |
-| Your policies, $1/mo, yearly rotation | Customer-managed key |
-| Encrypt > 4KB | Envelope encryption / GenerateDataKey |
-| Delete key now | Impossible — 7–30 day wait (disable instead) |
-| Encrypt/decrypt across Regions | Multi-Region keys |
-| Cut KMS costs on S3 | S3 Bucket Key |
-| FIPS 140-2 Level 3 | CloudHSM |
-| "AWS cannot see keys" / dedicated hardware | CloudHSM |
-| SSL offload / own CA | CloudHSM |
-| Access needs key policy AND IAM | Both must allow |
-
-You now hold the keys — next, the safes where applications keep their passwords: Secrets Manager and Parameter Store.
+Targeted fact check: 2026-10-10. Adapted from RonitSachdev's guide; revised claims are linked above.

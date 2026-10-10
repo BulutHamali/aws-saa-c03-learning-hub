@@ -1,133 +1,82 @@
-# Section 17: SQS, SNS & Kinesis — the messaging block
+# Section 17: SQS, SNS & Kinesis
+
+[Topic index](00-README.md) · [Decision guide](../decision-guides/README.md)
 
 ## The idea
 
-This section is one of the **heaviest question sources** on the exam, so let's build it from zero.
+Messaging separates acceptance of work from processing it. A queue absorbs bursts, but it cannot make a failing consumer reliable by itself: design retries, retention, failure handling, and idempotency.
 
-Imagine your web tier calls your order processor **directly**:
+**Idempotency** means that repeating a request has the same intended effect as processing it once. A payment handler must not charge twice when a message is redelivered.
 
-```
-[Web server] --(sync call)--> [Order processor]
-```
+## SQS: distribute work to consumers
 
-Three ways this hurts you:
-1. **The spinner**: processor is slow → the customer stares at a loading wheel.
-2. **Lost orders**: processor crashes mid-call → the order evaporates.
-3. **Drowning**: Black Friday spike → processor gets 100x traffic and falls over.
+A worker receives a message, processes it, then deletes it. Receiving hides the message during its **visibility timeout**; it does not remove it. If processing or deletion fails, the message can return.
 
-Now put a **buffer** in between:
-
-```
-[Web server] --> [ QUEUE:  msg | msg | msg ] --> [Order processor]
-   (instant "OK!")    (holds everything)        (works at its own pace)
-```
-
-One buffer fixes all three: the web tier answers instantly, messages survive crashes because they sit safely in the queue, and spikes just make the queue longer instead of killing the worker. This is **decoupling**, and the vivid analogy for the whole section: SQS is a **mailbox** (letters wait until you collect them), SNS is a **megaphone** (everyone within earshot hears it *now*, then it's gone), and Kinesis is a **river** (many people can stand on the bank reading the same water, and you can wade back upstream to re-read it).
-
-## SQS — the mailbox (queue, PULL, one message → ONE worker)
-
-**SQS (Simple Queue Service)**: producers put messages in; consumers **pull** them out. Each message is processed by **exactly one worker** — once someone takes the letter from the mailbox, it's theirs.
-
-**Visibility timeout** — the mechanic the exam adores:
-- When a worker reads a message, it is **hidden, not deleted** (default **30 seconds**).
-- Worker finishes → explicitly deletes it. Worker **crashes** → timeout expires → message **reappears** for another worker. That's your built-in retry.
-- **THE trap: "messages are being processed twice."** Cause: processing takes longer than the visibility timeout, so the message reappears while worker #1 is still on it. Fix: **increase the visibility timeout.**
-
-More SQS facts:
-- **DLQ (Dead-Letter Queue)**: a "poison message" that keeps failing gets moved to a side queue after **MaxReceiveCount** attempts — inspect failures without clogging the main queue.
-- **Long polling** (up to **20 seconds**): consumer waits for messages instead of hammering empty-poll requests. "Reduce cost / empty responses from polling" → **long polling**.
-- **Max message size 256 KB.** Bigger payloads → **store in S3, send a pointer** in the message.
-- **Retention: 4 days default, 14 days max.** Not a database — collect your mail.
-- **Standard vs FIFO**:
-
-| | Standard | FIFO |
+| Behavior | Standard queue | FIFO queue |
 |---|---|---|
-| Throughput | **Unlimited** | **300 msg/s** (3,000 with batching) |
-| Delivery | **At-least-once** (dupes possible) | **Exactly-once** |
-| Order | Best-effort | **Strict order** |
-| Trigger | Default choice | "Order matters" / "no duplicates" |
+| Delivery | At least once; duplicates are possible | Send deduplication within a five-minute window; consumer retries still require idempotency |
+| Ordering | Best effort | Ordered **within a message group**, not globally across all groups |
+| Throughput | High throughput; check applicable quotas | Depends on mode, Region, batching, and message-group distribution |
+| Typical use | Independent background work | Ordered operations per entity |
 
-- Classic pattern: **Auto Scaling Group of workers scaling on queue depth** (CloudWatch metric `ApproximateNumberOfMessagesVisible`) — the queue gets long, more workers spawn.
+FIFO's “exactly-once processing” terminology does not make database updates or external side effects transactional with message deletion.
 
-## SNS — the megaphone (PUSH, one → MANY)
+Useful settings:
 
-**SNS (Simple Notification Service)**: publish one message to a **topic**, and SNS **pushes** it to ALL **subscribers** simultaneously — **Lambda, SQS, HTTP endpoints, email, SMS, mobile push**.
+- **Visibility timeout:** match it to processing and retry behavior. Increasing it can prevent premature redelivery; it does not eliminate all duplicates.
+- **Dead-letter queue (DLQ):** use a redrive policy and `maxReceiveCount` to isolate repeated failures.
+- **Long polling:** waits up to 20 seconds to reduce empty receives.
+- **Payload:** maximum 1 MiB (1,048,576 bytes). For larger content, store it in S3 and pass a reference with suitable access and lifecycle management.
+- **Retention:** default four days; configurable up to fourteen days. Deletion ends ordinary queue replay.
 
-Critical nature: **SNS stores nothing.** It's a **megaphone, not a mailbox** — if a subscriber is down at shout-time, that subscriber misses the message. **Message filtering** lets each subscriber receive only messages matching a policy (e.g., billing gets only `order_type: refund`).
+Sources: [message quotas](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/quotas-messages.html), [FIFO deduplication](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/FIFO-queues-exactly-once-processing.html), [high throughput FIFO](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/high-throughput-fifo.html).
 
-**THE fan-out pattern** — the exam's darling:
+## SNS: publish to subscribers
 
-```
-                        +--> [SQS: analytics queue] --> analytics workers
-[Order service] --> [SNS topic]
-                        +--> [SQS: fulfillment queue] --> fulfillment workers
-                        +--> [SQS: fraud queue]      --> fraud checker
-```
+SNS routes one publication to multiple subscribers. Its delivery retry policy depends on the endpoint; a failed first attempt does not automatically mean permanent loss. Configure subscription DLQs where appropriate. SNS FIFO topics also support optional archive and replay.
 
-SNS → **multiple SQS queues**. Why not SNS alone? **Durability**: if the fraud service is down for an hour, its **queue holds the messages** until it recovers. Rule of thumb: **never SNS alone when reliability matters — fan out into SQS.**
+A common pattern is **SNS → one SQS queue per downstream application**. Each application gets its own backlog and can drain it independently. A single shared SQS queue would distribute work among consumers rather than give every application every event.
 
-## Kinesis Data Streams — the river
+Sources: [SNS retries](https://docs.aws.amazon.com/sns/latest/dg/sns-message-delivery-retries.html), [FIFO archive and replay](https://docs.aws.amazon.com/sns/latest/dg/fifo-message-archiving-replay.html).
 
-**Real-time streaming** with two superpowers SQS simply lacks:
-1. **MULTIPLE consumers read the SAME data** (in SQS, one worker takes the message and it's gone; in the river, everyone on the bank sees the same water).
-2. **REPLAY**: data is retained (**24 hours default, up to 365 days**) — rewind and reprocess.
+## Streams and delivery pipelines
 
-Capacity unit = the **shard**: **1 MB/s in, 2 MB/s out**, and **ordering is guaranteed per shard** (partition key decides the shard). More throughput = more shards.
+**Kinesis Data Streams** fits retained streaming data that independent consumers must read and replay. Plan partition keys, ordering scope, retention, and consumer capacity.
 
-Kinesis's kill-shots vs SQS: **"reprocess yesterday's data"** or **"two applications must read the same stream"** → Kinesis Data Streams, never SQS.
+**Amazon Data Firehose** delivers streaming data to supported destinations such as S3 with managed buffering and optional transformations. Delivery latency depends on configuration and destination; “exactly 60 seconds” is not a universal guarantee. Firehose is the current name for the service formerly called Kinesis Data Firehose.
 
-## Kinesis Data Firehose — the delivery truck
+**Amazon MQ** fits applications requiring supported ActiveMQ or RabbitMQ protocols. A familiar protocol can reduce migration changes, but compatibility still needs testing.
 
-Streams is a river; **Firehose** is a delivery truck on a schedule: **near-real-time (~60 seconds buffering)**, **ZERO code, fully managed**, and it delivers to fixed destinations: **S3, Redshift, OpenSearch, Splunk** (plus optional **Lambda transform** en route).
+Sources: [Kinesis concepts](https://docs.aws.amazon.com/streams/latest/dev/key-concepts.html), [Data Firehose](https://docs.aws.amazon.com/firehose/latest/dev/what-is-this-service.html), [Amazon MQ](https://docs.aws.amazon.com/amazon-mq/latest/developer-guide/welcome.html).
 
-Trigger phrase: **"stream data into S3 with the LEAST operational effort / no code"** → **Firehose**. If the answer needs custom consumers or replay → Streams.
+## Decision patterns
 
-## Amazon MQ — the lift-and-shift broker
+| Requirement | Candidate | Why the closest alternative may fail |
+|---|---|---|
+| Buffer independent jobs | SQS | SNS alone does not provide each worker fleet a queue backlog |
+| Give billing and fulfillment every event | SNS → separate SQS queues | Competing workers on one queue divide the work |
+| Reprocess a retained ordered stream with independent consumers | Kinesis Data Streams | Deleted SQS messages are not retained stream history |
+| Deliver telemetry to S3 with managed buffering | Data Firehose | Custom stream consumers add operational work |
+| Preserve a broker protocol during migration | Amazon MQ | SQS/SNS require different client interfaces |
+| Route SaaS or AWS events by content | EventBridge | Evaluate event sources and integrations, not just fan-out |
 
-Existing on-prem app speaking **open broker protocols — MQTT, AMQP, JMS, STOMP** (RabbitMQ / ActiveMQ)? Rewriting for SQS/SNS is work. **Amazon MQ** = managed RabbitMQ/ActiveMQ, so you **lift-and-shift without code changes**. Protocol names in the question = Amazon MQ.
+## Check your understanding
 
-## Four-way decision table
+A FIFO consumer charges a card, then crashes before deleting the message. Will FIFO alone prevent another charge?
 
-| Service | Model | Consumers | Storage/Replay | Pick when |
-|---|---|---|---|---|
-| **SQS** | Queue, PULL | ONE per message | 4–14 days, no replay after delete | Decouple, buffer spikes, work distribution |
-| **SNS** | Pub/sub, PUSH | MANY, all at once | **None** | Notify many systems instantly (fan out to SQS for durability) |
-| **Kinesis Streams** | Stream (river) | MANY read SAME data | 24h–365d, **replayable** | Real-time analytics, multiple readers, reprocessing |
-| **Firehose** | Delivery pipe | Fixed destinations | Buffers ~60s | Dump streams into S3/Redshift/OpenSearch/Splunk, zero code |
-| **Amazon MQ** | Traditional broker | Protocol-based | Broker semantics | MQTT/AMQP/JMS migration, no code changes |
+<details>
+<summary>Expected explanation</summary>
 
-## Question patterns
+No. The consumer can see the message again after visibility expires. Use an idempotency key and a durable record or a payment API with idempotent requests. Queue send deduplication is different from exactly-once business effects.
 
-> *"Web tier overwhelmed by traffic spikes; orders being lost"* → **SQS + Auto Scaling worker group** (queue buffers the spike, workers scale on depth)
-> *"Messages must be processed in strict order with no duplicates"* → **SQS FIFO** (order + exactly-once; remember 300/3,000 msg/s cap)
-> *"One event must notify three downstream systems, and none may miss it even if temporarily down"* → **SNS fan-out to multiple SQS queues** (queues hold messages for sleeping services)
-> *"Some SQS messages are being processed twice"* → **Increase the visibility timeout** (processing outlasts the hiding window)
-> *"Messages that repeatedly fail are blocking the queue"* → **Dead-Letter Queue with MaxReceiveCount** (quarantine poison messages)
-> *"Clickstream analytics: two applications must consume the same real-time data, with ability to reprocess yesterday"* → **Kinesis Data Streams** (multiple consumers + replay = its two kill-shots)
-> *"Stream IoT telemetry into S3 with the least operational overhead, no custom code"* → **Kinesis Data Firehose** (zero-code delivery truck to S3)
-> *"Reduce cost of consumers polling an often-empty queue"* → **Long polling (20s)** (fewer empty receives)
-> *"Migrate an on-prem RabbitMQ/ActiveMQ app using AMQP/JMS/MQTT without rewriting"* → **Amazon MQ** (protocol names = MQ)
-> *"Message payloads are 1 MB, exceeding the SQS limit"* → **Store in S3, send a pointer** (256 KB cap)
-> *"Each subscriber should only receive certain message types from a topic"* → **SNS message filtering** (filter policy per subscription)
+</details>
 
 ## Pocket card
 
-| Keyword | Answer |
-|---|---|
-| Decouple / buffer spikes | SQS |
-| One message → one worker, PULL | SQS |
-| Processed twice | Increase visibility timeout (default 30s) |
-| Poison messages | DLQ + MaxReceiveCount |
-| Empty-poll cost | Long polling (20s) |
-| Strict order + exactly-once | FIFO (300 / 3,000 msg/s) |
-| Message > 256 KB | S3 + pointer |
-| Retention | 4 days default / 14 max |
-| One → many, PUSH, instant | SNS (stores nothing) |
-| Notify many, durably | SNS → multiple SQS (fan-out) |
-| Multiple consumers, same data, replay | Kinesis Data Streams (24h–365d) |
-| Shard throughput | 1 MB/s in, 2 MB/s out, order per shard |
-| Stream → S3, zero code, ~60s | Firehose (S3/Redshift/OpenSearch/Splunk) |
-| MQTT / AMQP / JMS / RabbitMQ | Amazon MQ |
-| Workers scale on queue depth | ASG + CloudWatch queue metric |
+- Queue = independent work distribution; topic = fan-out; stream = retained history.
+- SQS payload ceiling = 1 MiB, not the older 256 KiB.
+- FIFO order is per message group; throughput is configuration-dependent.
+- Visibility timeout controls redelivery timing; idempotency controls repeated effects.
+- SNS has retries; FIFO archive/replay is an optional capability.
 
-Every architecture you've built so far — containers, Beanstalk apps, API Gateway backends — becomes bulletproof the moment you slide one of these buffers between its pieces; decoupling is the quiet superpower behind almost every correct SAA-C03 answer.
+Targeted fact check: 2026-10-10. Adapted from RonitSachdev's guide; revised claims are linked above.

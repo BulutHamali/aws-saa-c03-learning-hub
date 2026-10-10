@@ -10,7 +10,7 @@ Signal phrase: "allow teams to deploy **only approved, standardized, compliant c
 
 **Trusted Advisor** is your **automated AWS consultant** — a robot auditor that continuously scans your account and nags you about the exact things a human consultant would bill you for.
 
-## Trusted Advisor's five pillars
+## Trusted Advisor check categories
 
 | Pillar | Example checks |
 |---|---|
@@ -19,12 +19,13 @@ Signal phrase: "allow teams to deploy **only approved, standardized, compliant c
 | **Security** | Security groups open to 0.0.0.0/0, **MFA missing on root**, public S3 buckets |
 | **Fault Tolerance** | Missing Multi-AZ, snapshots not taken, single-AZ exposure |
 | **Service Limits** | You're approaching a **service quota** (e.g., near your VPC or EC2 limit) |
+| **Operational Excellence** | Operational practices and service-use recommendations |
 
-THE trap (tested nuance): **the free tier of Trusted Advisor gives only a handful of core checks** (basic security + service limits). To unlock the **full set of checks — including all Cost Optimization checks — you need a Business or Enterprise support plan.** If a question asks "why can't the team see the cost optimization checks?", the answer is their support plan, not a permissions problem.
+**Check support entitlement:** Basic Support exposes a subset of checks. Current documentation identifies Business Support+, Enterprise Support, and Unified Operations for the full set, with legacy-plan transitions and exceptions. If checks are missing, inspect both entitlement and permissions. [Support documentation](https://docs.aws.amazon.com/awssupport/latest/user/trusted-advisor.html).
 
 Also worth one neuron each:
 - Trusted Advisor **recommends**; it doesn't fix. Pair it with EventBridge/CloudWatch for alerting on check status changes.
-- Distinguish from neighbors: **Config** = "is this resource *compliant with my rules*?"; **Inspector** = software vulnerabilities on workloads; **Trusted Advisor** = broad best-practice checks across the five pillars, including cost and limits.
+- Distinguish from neighbors: **Config** = "is this resource *compliant with my rules*?"; **Inspector** = software vulnerabilities on workloads; **Trusted Advisor** = broad best-practice checks across its check categories, including cost and limits.
 
 ## Question patterns
 
@@ -32,7 +33,7 @@ Also worth one neuron each:
 
 > *"Identify idle instances and unattached Elastic IPs to reduce the bill"* → **Trusted Advisor** (Cost Optimization pillar)
 
-> *"Team can only see a few Trusted Advisor checks — why?"* → **Support plan** (full checks need Business/Enterprise)
+> *"Team can only see a few Trusted Advisor checks — why?"* → **Support plan** (check current support entitlement and permissions)
 
 > *"Get warned before hitting an AWS service quota"* → **Trusted Advisor Service Limits check** (limits = its own pillar)
 
@@ -49,7 +50,9 @@ Also worth one neuron each:
 | Idle / unused / unattached resources | Trusted Advisor (Cost) |
 | Approaching quota warning | Trusted Advisor (Service Limits) |
 | Open SGs, root MFA check | Trusted Advisor (Security) |
-| Full checks locked | Business/Enterprise support plan |
-| Five pillars | Cost, Performance, Security, Fault Tolerance, Service Limits |
+| Full checks unavailable | Check current support entitlement and permissions |
+| Six categories | Cost, Performance, Security, Fault Tolerance, Service Limits, Operational Excellence |
 
 Trusted Advisor tells you the bill *could* be smaller — the cost management tool zoo in the next section is how you actually see, alert on, and shrink it.
+
+Targeted review: 2026-10-10. [AWS check-category reference](https://docs.aws.amazon.com/awssupport/latest/user/trusted-advisor-check-reference.html).

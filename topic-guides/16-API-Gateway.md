@@ -32,9 +32,9 @@ THE trap: usage plans, API keys, and caching are **REST API only**. If the quest
 | **Regional** | Clients in the **same region** | Or when you want to bolt on **your own CloudFront** distribution |
 | **Private** | **VPC-only** access | Reached via an **Interface VPC Endpoint** — never touches the internet |
 
-## The auth trio (guaranteed question)
+## Authorization choices
 
-Three ways to answer "who's calling?" — the exam WILL make you pick one:
+Match the method to the API type. HTTP APIs can validate JWTs from compatible third-party issuers directly; third-party identity does not automatically require custom Lambda code.
 
 | Authorizer | Use when the caller is... | Mechanism |
 |---|---|---|
@@ -46,13 +46,13 @@ Hook: **IAM = machines, Cognito = your users, Lambda Authorizer = anything weird
 
 ## Traffic control & performance
 
-- **Default throttle: 10,000 requests/second** per account per region. Exceed it and clients get **HTTP 429 Too Many Requests** — "clients receiving 429" → you're being throttled.
-- **Usage Plans + API Keys** (REST only): per-customer request quotas and rate tiers. Trigger: **"SaaS company sells API access in Basic/Pro tiers"** → usage plans with API keys.
+- **Default throttle: 10,000 requests/second in many Regions**, with lower defaults in some Regions; shared per account and Region. Exceed it and clients get **HTTP 429 Too Many Requests** — "clients receiving 429" → you're being throttled.
+- **Usage Plans + API Keys** (REST only): best-effort per-customer quotas and rate tiers; API keys are not authentication or authorization. Trigger: **"SaaS company sells API access in Basic/Pro tiers"** → usage plans with API keys.
 - **Caching**: gateway caches responses (**default TTL 300 seconds**), reducing backend load and latency. "Reduce calls hitting the backend for repeated requests" → enable API Gateway caching.
 
 ## Two mechanical facts (free points)
 
-1. **THE 29-second timeout.** API Gateway waits a **maximum of 29 seconds** for the backend. Lambda can run 15 minutes — **but not behind API Gateway**. This limit is **hard; "increase the timeout" is impossible past 29s** — any answer suggesting it is wrong. Long-running jobs go **asynchronous**: return **202 Accepted** immediately, hand the work to **SQS or Step Functions**, let the client poll or get notified.
+1. **Integration timeout depends on API type.** Regional and private REST APIs can request an increase beyond the default 29 seconds; this may require a throttle-quota reduction. HTTP APIs have a 30-second maximum. For jobs that should outlive a client connection, return **202 Accepted only after durably accepting work**, then use a queue or workflow with a job ID and status endpoint. Sources: [REST timeout increases](https://repost.aws/knowledge-center/api-gateway-timeout-limit), [HTTP API quotas](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-quotas.html).
 
 ```
 Client --> API GW --202--> (immediately)
@@ -67,11 +67,11 @@ Client --> API GW --202--> (immediately)
 > *"Build a REST API with no servers to manage, pay only per request"* → **API Gateway + Lambda + DynamoDB** (the canonical serverless chain)
 > *"SaaS company wants to offer customers different API request limits per pricing tier"* → **Usage Plans + API Keys** (REST API only — per-customer tiers)
 > *"Mobile app users must sign in before calling the API"* → **Cognito User Pool authorizer** (app users = Cognito JWTs)
-> *"Company has an existing custom/third-party token system for API auth"* → **Lambda Authorizer** (custom logic = your Lambda decides)
+> *"Company has an existing custom/third-party token system for API auth"* → **check native JWT support first**, then Lambda Authorizer for custom logic
 > *"Cheapest way to expose a simple Lambda function over HTTP with JWT auth"* → **HTTP API** (~70% cheaper, minimal features)
 > *"Push live updates to a real-time dashboard / chat application"* → **WebSocket API** (persistent two-way connection)
 > *"API must be accessible only from within the VPC, never the internet"* → **Private endpoint + Interface VPC Endpoint**
-> *"Backend process takes 2 minutes; API Gateway requests keep timing out — fix it"* → **Go async: return 202, queue to SQS/Step Functions** (29s is a hard limit; you cannot raise it)
+> *"Backend process takes 2 minutes; API Gateway requests keep timing out — fix it"* → **Go async: return 202, queue to SQS/Step Functions** (check API type and quota; async avoids keeping the connection open)
 > *"Browser JavaScript from another domain gets blocked calling the API"* → **Enable CORS** on API Gateway
 > *"Clients suddenly receive HTTP 429 errors"* → **Throttling** — raise the limit or add caching/usage plans
 
@@ -88,9 +88,11 @@ Client --> API GW --202--> (immediately)
 | AWS-service callers | IAM / SigV4 auth |
 | App users sign in | Cognito User Pool authorizer |
 | Custom/third-party tokens | Lambda Authorizer |
-| 429 errors | Throttling (default 10,000 req/s) |
-| Backend > 29 seconds | Async: 202 + SQS/Step Functions |
+| 429 errors | Check account, stage, route, and usage-plan throttles; regional defaults vary |
+| Long-running backend | Check API timeout; consider durable async acceptance + job status |
 | Cache TTL default | 300 seconds |
 | Browser cross-domain error | Enable CORS |
 
 You just saw the fix for slow backends is "drop the work into a queue and walk away" — that queue, and the whole messaging toolbox around it, is the next section.
+
+Targeted review: 2026-10-10. See [account quotas](https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html) and [HTTP JWT authorizers](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-jwt-authorizer.html).

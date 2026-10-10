@@ -2,6 +2,10 @@
 
 Answer each challenge before expanding the explanation. These are original learning scenarios, not recalled exam questions.
 
+For each answer, award yourself one point for the correct candidate, one for explaining the hard requirement, and one for rejecting the nearest alternative. Record confidence before revealing the explanation. A correct guess still needs review. Use [the diagnostic](diagnostic.md) for multiple-choice practice and [architecture workshops](../labs/README.md) to apply the decisions.
+
+Sources for database and messaging answers: [RDS guide](../topic-guides/09-RDS-Aurora.md), [messaging guide](../topic-guides/17-SQS-SNS-Kinesis.md).
+
 ## 1. Burst-resistant image processing
 
 A photo application receives unpredictable upload spikes. Each image must be processed by a fleet that can scale independently. Failed work must be inspectable after several retries. Which architecture fits best?
@@ -11,7 +15,7 @@ A photo application receives unpredictable upload spikes. Each image must be pro
 
 Send upload events to an **SQS queue**, let the processing fleet poll it, configure a visibility timeout longer than normal processing, and attach a **dead-letter queue** with a sensible receive count.
 
-SQS absorbs spikes and separates producer capacity from consumer capacity. SNS alone would push immediately and would not provide the same worker-buffer semantics. Kinesis is compelling when ordered replayable streaming is required; that is not stated here.
+Make processing idempotent because messages may be redelivered. SQS absorbs spikes and separates producer capacity from consumer capacity. SNS alone would push immediately and would not provide the same worker-buffer semantics. Kinesis is compelling when ordered replayable streaming is required; that is not stated here.
 
 </details>
 
@@ -22,7 +26,7 @@ A transactional application needs automatic recovery from an Availability Zone o
 <details>
 <summary>Answer and reasoning</summary>
 
-Use an **RDS Multi-AZ deployment** for managed failover. A read replica is primarily a read-scaling tool and is not the default automatic-failover substitute for Multi-AZ. If both availability and read scaling are required, the design may use both capabilities for their separate purposes.
+Use an **RDS Multi-AZ DB instance deployment** for managed failover when no read capacity is required. A Multi-AZ DB cluster is another deployment with readable instances. A read replica is primarily a read-scaling tool and is not the default automatic-failover substitute for Multi-AZ. If both availability and read scaling are required, the design may use both capabilities for their separate purposes.
 
 </details>
 
@@ -77,7 +81,7 @@ A document pipeline has six dependent steps, human approval, per-step retries, a
 <details>
 <summary>Answer and reasoning</summary>
 
-Use **Step Functions** to orchestrate the states, retries, waits, approval callback, and execution history. Lambda can still perform individual compute steps. Direct chaining hides workflow state inside application code and makes recovery and audit harder.
+Use **Step Functions Standard** to orchestrate the states, retries, waits, approval callback, and execution history. Express workflows have a five-minute maximum and do not fit an hours-long human approval. Lambda can still perform individual compute steps. Direct chaining hides workflow state inside application code and makes recovery and audit harder.
 
 </details>
 
